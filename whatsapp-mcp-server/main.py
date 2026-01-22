@@ -366,10 +366,25 @@ if __name__ == "__main__":
         except Exception as e:
             return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
+    from starlette.responses import HTMLResponse
+
+    async def auth_page(request: Request):
+        """Proxy the WhatsApp authentication page from Go bridge"""
+        try:
+            # Get base URL and extract host:port (remove /api suffix)
+            base_url = os.environ.get("WHATSAPP_API_BASE_URL", "http://localhost:8080/api")
+            bridge_url = base_url.replace("/api", "")
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{bridge_url}/auth", timeout=10.0)
+                return HTMLResponse(content=resp.text, status_code=resp.status_code)
+        except Exception as e:
+            return HTMLResponse(content=f"<html><body><h1>Error</h1><p>{str(e)}</p><p>Go bridge may not be running.</p></body></html>", status_code=500)
+
     starlette_app = Starlette(
         routes=[
             Route("/", endpoint=health_check),
             Route("/health", endpoint=health_check),
+            Route("/auth", endpoint=auth_page),
             Route("/api/send", endpoint=api_send, methods=["POST"]),
             Route("/api/qr", endpoint=api_qr),
             Route("/api/status", endpoint=api_status),
