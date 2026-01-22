@@ -1,14 +1,20 @@
 from typing import List, Dict, Any, Optional
 from mcp.server.fastmcp import FastMCP
+
+# Use Supabase for database operations
+from supabase_client import (
+    search_contacts as supabase_search_contacts,
+    list_messages as supabase_list_messages,
+    list_chats as supabase_list_chats,
+    get_chat as supabase_get_chat,
+    get_direct_chat_by_contact as supabase_get_direct_chat_by_contact,
+    get_contact_chats as supabase_get_contact_chats,
+    get_last_interaction as supabase_get_last_interaction,
+    get_message_context as supabase_get_message_context,
+)
+
+# Keep using the Go bridge API for sending messages
 from whatsapp import (
-    search_contacts as whatsapp_search_contacts,
-    list_messages as whatsapp_list_messages,
-    list_chats as whatsapp_list_chats,
-    get_chat as whatsapp_get_chat,
-    get_direct_chat_by_contact as whatsapp_get_direct_chat_by_contact,
-    get_contact_chats as whatsapp_get_contact_chats,
-    get_last_interaction as whatsapp_get_last_interaction,
-    get_message_context as whatsapp_get_message_context,
     send_message as whatsapp_send_message,
     send_file as whatsapp_send_file,
     send_audio_message as whatsapp_audio_voice_message,
@@ -25,7 +31,7 @@ def search_contacts(query: str) -> List[Dict[str, Any]]:
     Args:
         query: Search term to match against contact names or phone numbers
     """
-    contacts = whatsapp_search_contacts(query)
+    contacts = supabase_search_contacts(query)
     return contacts
 
 @mcp.tool()
@@ -55,7 +61,7 @@ def list_messages(
         context_before: Number of messages to include before each match (default 1)
         context_after: Number of messages to include after each match (default 1)
     """
-    messages = whatsapp_list_messages(
+    messages = supabase_list_messages(
         after=after,
         before=before,
         sender_phone_number=sender_phone_number,
@@ -86,7 +92,7 @@ def list_chats(
         include_last_message: Whether to include the last message in each chat (default True)
         sort_by: Field to sort results by, either "last_active" or "name" (default "last_active")
     """
-    chats = whatsapp_list_chats(
+    chats = supabase_list_chats(
         query=query,
         limit=limit,
         page=page,
@@ -103,7 +109,7 @@ def get_chat(chat_jid: str, include_last_message: bool = True) -> Dict[str, Any]
         chat_jid: The JID of the chat to retrieve
         include_last_message: Whether to include the last message (default True)
     """
-    chat = whatsapp_get_chat(chat_jid, include_last_message)
+    chat = supabase_get_chat(chat_jid, include_last_message)
     return chat
 
 @mcp.tool()
@@ -113,7 +119,7 @@ def get_direct_chat_by_contact(sender_phone_number: str) -> Dict[str, Any]:
     Args:
         sender_phone_number: The phone number to search for
     """
-    chat = whatsapp_get_direct_chat_by_contact(sender_phone_number)
+    chat = supabase_get_direct_chat_by_contact(sender_phone_number)
     return chat
 
 @mcp.tool()
@@ -125,7 +131,7 @@ def get_contact_chats(jid: str, limit: int = 20, page: int = 0) -> List[Dict[str
         limit: Maximum number of chats to return (default 20)
         page: Page number for pagination (default 0)
     """
-    chats = whatsapp_get_contact_chats(jid, limit, page)
+    chats = supabase_get_contact_chats(jid, limit, page)
     return chats
 
 @mcp.tool()
@@ -135,7 +141,7 @@ def get_last_interaction(jid: str) -> str:
     Args:
         jid: The JID of the contact to search for
     """
-    message = whatsapp_get_last_interaction(jid)
+    message = supabase_get_last_interaction(jid)
     return message
 
 @mcp.tool()
@@ -151,7 +157,7 @@ def get_message_context(
         before: Number of messages to include before the target message (default 5)
         after: Number of messages to include after the target message (default 5)
     """
-    context = whatsapp_get_message_context(message_id, before, after)
+    context = supabase_get_message_context(message_id, before, after)
     return context
 
 @mcp.tool()

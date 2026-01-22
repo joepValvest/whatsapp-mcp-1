@@ -8,3 +8,9 @@ healthcheckPath = "/"
 healthcheckTimeout = 300
 restartPolicyType = "on_failure"
 restartPolicyMaxRetries = 5
+
+[variables]
+SUPABASE_URL = "https://gdutycythylnigiffkru.supabase.co"
+MESSAGES_DB_PATH = "/app/whatsapp-bridge/store/messages.db"
+WHATSAPP_API_BASE_URL = "http://localhost:8080/api"
+MCP_PORT = "3000"

@@ -1,5 +1,5 @@
 # Multi-stage build for WhatsApp MCP Server
-FROM golang:1.24-alpine AS go-builder
+FROM golang:1.23-alpine AS go-builder
 
 # Install build dependencies for CGO (needed for SQLite)
 RUN apk add --no-cache gcc musl-dev sqlite-dev
@@ -8,9 +8,9 @@ WORKDIR /build
 COPY whatsapp-bridge/go.mod whatsapp-bridge/go.sum ./
 RUN go mod download
 
-COPY whatsapp-bridge/main.go ./
+COPY whatsapp-bridge/*.go ./
 # Build with static linking for glibc compatibility
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s -linkmode external -extldflags '-static'" -o whatsapp-bridge main.go
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s -linkmode external -extldflags '-static'" -o whatsapp-bridge .
 RUN chmod +x whatsapp-bridge && ls -la /build/
 
 # Final stage
@@ -53,6 +53,9 @@ RUN mkdir -p /app/whatsapp-bridge/store && chmod 777 /app/whatsapp-bridge/store
 ENV MESSAGES_DB_PATH=/app/whatsapp-bridge/store/messages.db
 ENV WHATSAPP_API_BASE_URL=http://localhost:8080/api
 ENV MCP_PORT=3000
+# Supabase environment variables (set via Railway dashboard)
+ENV SUPABASE_URL=""
+ENV SUPABASE_KEY=""
 
 WORKDIR /app
 

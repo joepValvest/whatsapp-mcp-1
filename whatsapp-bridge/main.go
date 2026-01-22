@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
 	"encoding/binary"
@@ -17,11 +18,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
-
-	"bytes"
-
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -41,7 +40,18 @@ type Message struct {
 	Filename  string
 }
 
-// Database handler for storing message history
+// MessageStoreInterface defines the interface for message storage
+type MessageStoreInterface interface {
+	Close() error
+	StoreChat(jid, name string, lastMessageTime time.Time) error
+	StoreMessage(id, chatJID, sender, content string, timestamp time.Time, isFromMe bool,
+		mediaType, filename, url string, mediaKey, fileSHA256, fileEncSHA256 []byte, fileLength uint64) error
+	GetMessages(chatJID string, limit int) ([]Message, error)
+	GetChats() (map[string]time.Time, error)
+	GetMediaInfo(id, chatJID string) (string, string, string, []byte, []byte, []byte, uint64, error)
+}
+
+// Database handler for storing message history (SQLite backend)
 type MessageStore struct {
 	db *sql.DB
 }
@@ -409,7 +419,7 @@ func extractMediaInfo(msg *waProto.Message) (mediaType string, filename string, 
 }
 
 // Handle regular incoming messages with media support
-func handleMessage(client *whatsmeow.Client, messageStore *MessageStore, msg *events.Message, logger waLog.Logger) {
+func handleMessage(client *whatsmeow.Client, messageStore MessageStoreInterface, msg *events.Message, logger waLog.Logger) {
 	// Save message to database
 	chatJID := msg.Info.Chat.String()
 	sender := msg.Info.Sender.User
@@ -554,7 +564,7 @@ func (d *MediaDownloader) GetMediaType() whatsmeow.MediaType {
 }
 
 // Function to download media from a message
-func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, messageID, chatJID string) (bool, string, string, string, error) {
+func downloadMedia(client *whatsmeow.Client, messageStore MessageStoreInterface, messageID, chatJID string) (bool, string, string, string, error) {
 	// Query the database for the message
 	var mediaType, filename, url string
 	var mediaKey, fileSHA256, fileEncSHA256 []byte
@@ -569,15 +579,7 @@ func downloadMedia(client *whatsmeow.Client, messageStore *MessageStore, message
 	mediaType, filename, url, mediaKey, fileSHA256, fileEncSHA256, fileLength, err = messageStore.GetMediaInfo(messageID, chatJID)
 
 	if err != nil {
-		// Try to get basic info if extended info isn't available
-		err = messageStore.db.QueryRow(
-			"SELECT media_type, filename FROM messages WHERE id = ? AND chat_jid = ?",
-			messageID, chatJID,
-		).Scan(&mediaType, &filename)
-
-		if err != nil {
-			return false, "", "", "", fmt.Errorf("failed to find message: %v", err)
-		}
+		return false, "", "", "", fmt.Errorf("failed to find message: %v", err)
 	}
 
 	// Check if this is a media message
@@ -676,7 +678,7 @@ func extractDirectPathFromURL(url string) string {
 }
 
 // Start a REST API server to expose the WhatsApp client functionality
-func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port int) {
+func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterface, port int) {
 	// Handler for sending messages
 	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
 		// Only allow POST requests
@@ -787,6 +789,9 @@ func startRESTServer(client *whatsmeow.Client, messageStore *MessageStore, port 
 }
 
 func main() {
+	// Load .env file if present
+	_ = godotenv.Load()
+
 	// Set up logger
 	logger := waLog.Stdout("Client", "INFO", true)
 	logger.Infof("Starting WhatsApp client...")
@@ -826,11 +831,21 @@ func main() {
 		return
 	}
 
-	// Initialize message store
-	messageStore, err := NewMessageStore()
+	// Initialize message store - try Supabase first, fall back to SQLite
+	var messageStore MessageStoreInterface
+	supabaseStore, err := NewSupabaseMessageStore()
 	if err != nil {
-		logger.Errorf("Failed to initialize message store: %v", err)
-		return
+		logger.Warnf("Supabase not configured, falling back to SQLite: %v", err)
+		sqliteStore, err := NewMessageStore()
+		if err != nil {
+			logger.Errorf("Failed to initialize SQLite message store: %v", err)
+			return
+		}
+		messageStore = sqliteStore
+		logger.Infof("Using SQLite for message storage")
+	} else {
+		messageStore = supabaseStore
+		logger.Infof("Using Supabase for message storage")
 	}
 	defer messageStore.Close()
 
@@ -927,17 +942,8 @@ func main() {
 }
 
 // GetChatName determines the appropriate name for a chat based on JID and other info
-func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types.JID, chatJID string, conversation interface{}, sender string, logger waLog.Logger) string {
-	// First, check if chat already exists in database with a name
-	var existingName string
-	err := messageStore.db.QueryRow("SELECT name FROM chats WHERE jid = ?", chatJID).Scan(&existingName)
-	if err == nil && existingName != "" {
-		// Chat exists with a name, use that
-		logger.Infof("Using existing chat name for %s: %s", chatJID, existingName)
-		return existingName
-	}
-
-	// Need to determine chat name
+func GetChatName(client *whatsmeow.Client, messageStore MessageStoreInterface, jid types.JID, chatJID string, conversation interface{}, sender string, logger waLog.Logger) string {
+	// Need to determine chat name (skip database lookup since we use interface now)
 	var name string
 
 	if jid.Server == "g.us" {
@@ -1010,7 +1016,7 @@ func GetChatName(client *whatsmeow.Client, messageStore *MessageStore, jid types
 }
 
 // Handle history sync events
-func handleHistorySync(client *whatsmeow.Client, messageStore *MessageStore, historySync *events.HistorySync, logger waLog.Logger) {
+func handleHistorySync(client *whatsmeow.Client, messageStore MessageStoreInterface, historySync *events.HistorySync, logger waLog.Logger) {
 	fmt.Printf("Received history sync event with %d conversations\n", len(historySync.Data.Conversations))
 
 	syncedCount := 0
