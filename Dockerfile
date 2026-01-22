@@ -51,7 +51,7 @@ RUN mkdir -p /app/whatsapp-bridge/store && chmod 777 /app/whatsapp-bridge/store
 
 # Set environment variables
 ENV MESSAGES_DB_PATH=/app/whatsapp-bridge/store/messages.db
-ENV WHATSAPP_API_BASE_URL=http://localhost:8080/api
+ENV WHATSAPP_API_BASE_URL=http://localhost:8081/api
 ENV MCP_PORT=3000
 # Supabase environment variables (set via Railway dashboard)
 ENV SUPABASE_URL=""
