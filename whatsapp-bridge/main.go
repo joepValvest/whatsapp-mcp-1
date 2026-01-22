@@ -934,6 +934,14 @@ func main() {
 	// Create channel to track connection success
 	connected := make(chan bool, 1)
 
+	// Start REST API server EARLY so /api/qr and /api/status work during QR scan
+	bridgePort := 8080
+	if portEnv := os.Getenv("BRIDGE_PORT"); portEnv != "" {
+		fmt.Sscanf(portEnv, "%d", &bridgePort)
+	}
+	go startRESTServer(client, messageStore, bridgePort)
+	fmt.Printf("REST API server starting on port %d\n", bridgePort)
+
 	// Connect to WhatsApp
 	if client.Store.ID == nil {
 		// No ID stored, this is a new client, need to pair with phone
@@ -1001,13 +1009,6 @@ func main() {
 	}
 
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
-
-	// Start REST API server
-	bridgePort := 8080
-	if portEnv := os.Getenv("BRIDGE_PORT"); portEnv != "" {
-		fmt.Sscanf(portEnv, "%d", &bridgePort)
-	}
-	startRESTServer(client, messageStore, bridgePort)
 
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)
