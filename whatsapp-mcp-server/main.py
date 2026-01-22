@@ -272,14 +272,33 @@ if __name__ == "__main__":
         await sse.handle_post_message(request.scope, request.receive, request._send)
 
     from starlette.responses import JSONResponse
+    from starlette.requests import Request
 
     async def health_check(request):
         return JSONResponse({"status": "ok", "service": "whatsapp-mcp"})
+
+    async def api_send(request: Request):
+        """REST endpoint to send WhatsApp messages"""
+        try:
+            body = await request.json()
+            recipient = body.get("recipient")
+            message = body.get("message")
+
+            if not recipient:
+                return JSONResponse({"success": False, "message": "recipient is required"}, status_code=400)
+            if not message:
+                return JSONResponse({"success": False, "message": "message is required"}, status_code=400)
+
+            success, status_message = whatsapp_send_message(recipient, message)
+            return JSONResponse({"success": success, "message": status_message})
+        except Exception as e:
+            return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
     starlette_app = Starlette(
         routes=[
             Route("/", endpoint=health_check),
             Route("/health", endpoint=health_check),
+            Route("/api/send", endpoint=api_send, methods=["POST"]),
             Route("/sse", endpoint=handle_sse),
             Route("/messages", endpoint=handle_messages, methods=["POST"]),
         ]
