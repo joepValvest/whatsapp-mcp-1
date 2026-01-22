@@ -294,11 +294,35 @@ if __name__ == "__main__":
         except Exception as e:
             return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
+    import httpx
+
+    async def api_qr(request: Request):
+        """Get QR code for WhatsApp authentication"""
+        try:
+            base_url = os.environ.get("WHATSAPP_API_BASE_URL", "http://localhost:8080/api")
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{base_url}/qr", timeout=10.0)
+                return JSONResponse(resp.json())
+        except Exception as e:
+            return JSONResponse({"error": str(e), "authenticated": False, "qr_code": ""}, status_code=500)
+
+    async def api_status(request: Request):
+        """Get WhatsApp connection status"""
+        try:
+            base_url = os.environ.get("WHATSAPP_API_BASE_URL", "http://localhost:8080/api")
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{base_url}/status", timeout=10.0)
+                return JSONResponse(resp.json())
+        except Exception as e:
+            return JSONResponse({"error": str(e), "authenticated": False, "connected": False, "ready": False}, status_code=500)
+
     starlette_app = Starlette(
         routes=[
             Route("/", endpoint=health_check),
             Route("/health", endpoint=health_check),
             Route("/api/send", endpoint=api_send, methods=["POST"]),
+            Route("/api/qr", endpoint=api_qr),
+            Route("/api/status", endpoint=api_status),
             Route("/sse", endpoint=handle_sse),
             Route("/messages", endpoint=handle_messages, methods=["POST"]),
         ]

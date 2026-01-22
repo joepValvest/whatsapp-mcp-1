@@ -15,6 +15,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -28,6 +29,14 @@ import (
 	"go.mau.fi/whatsmeow/types/events"
 	waLog "go.mau.fi/whatsmeow/util/log"
 	"google.golang.org/protobuf/proto"
+)
+
+// Global state for QR code and connection status
+var (
+	currentQRCode   string
+	qrCodeMutex     sync.RWMutex
+	isAuthenticated bool
+	authMutex       sync.RWMutex
 )
 
 // Message represents a chat message for our client
@@ -679,6 +688,60 @@ func extractDirectPathFromURL(url string) string {
 
 // Start a REST API server to expose the WhatsApp client functionality
 func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterface, port int) {
+	// Handler for QR code - returns current QR code for authentication
+	http.HandleFunc("/api/qr", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		qrCodeMutex.RLock()
+		qr := currentQRCode
+		qrCodeMutex.RUnlock()
+
+		authMutex.RLock()
+		authenticated := isAuthenticated
+		authMutex.RUnlock()
+
+		if authenticated {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"authenticated": true,
+				"qr_code":       "",
+				"message":       "Already authenticated",
+			})
+			return
+		}
+
+		if qr == "" {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"authenticated": false,
+				"qr_code":       "",
+				"message":       "No QR code available. Service may be starting up.",
+			})
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"authenticated": false,
+			"qr_code":       qr,
+			"message":       "Scan this QR code with WhatsApp",
+		})
+	})
+
+	// Handler for status check
+	http.HandleFunc("/api/status", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		authMutex.RLock()
+		authenticated := isAuthenticated
+		authMutex.RUnlock()
+
+		connected := client.IsConnected()
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"authenticated": authenticated,
+			"connected":     connected,
+			"ready":         authenticated && connected,
+		})
+	})
+
 	// Handler for sending messages
 	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
 		// Only allow POST requests
@@ -884,9 +947,24 @@ func main() {
 		// Print QR code for pairing with phone
 		for evt := range qrChan {
 			if evt.Event == "code" {
+				// Store QR code for API access
+				qrCodeMutex.Lock()
+				currentQRCode = evt.Code
+				qrCodeMutex.Unlock()
+
 				fmt.Println("\nScan this QR code with your WhatsApp app:")
+				fmt.Println("Or visit /api/qr to get the QR code string")
 				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
 			} else if evt.Event == "success" {
+				// Clear QR code and set authenticated
+				qrCodeMutex.Lock()
+				currentQRCode = ""
+				qrCodeMutex.Unlock()
+
+				authMutex.Lock()
+				isAuthenticated = true
+				authMutex.Unlock()
+
 				connected <- true
 				break
 			}
@@ -902,6 +980,10 @@ func main() {
 		}
 	} else {
 		// Already logged in, just connect
+		authMutex.Lock()
+		isAuthenticated = true
+		authMutex.Unlock()
+
 		err = client.Connect()
 		if err != nil {
 			logger.Errorf("Failed to connect: %v", err)
