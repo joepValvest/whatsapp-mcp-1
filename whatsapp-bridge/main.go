@@ -769,6 +769,60 @@ func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterfac
 		})
 	})
 
+	// Handler for phone number pairing (alternative to QR code)
+	http.HandleFunc("/api/pair-phone", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if r.Method != http.MethodPost {
+			http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+
+		authMutex.RLock()
+		authenticated := isAuthenticated
+		authMutex.RUnlock()
+
+		if authenticated {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"message": "Already authenticated",
+			})
+			return
+		}
+
+		var req struct {
+			PhoneNumber string `json:"phone_number"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "Invalid request format", http.StatusBadRequest)
+			return
+		}
+
+		if req.PhoneNumber == "" {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"message": "Phone number is required (with country code, e.g., 31612345678)",
+			})
+			return
+		}
+
+		// Request pairing code
+		code, err := client.PairPhone(req.PhoneNumber, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+		if err != nil {
+			json.NewEncoder(w).Encode(map[string]interface{}{
+				"success": false,
+				"message": fmt.Sprintf("Failed to request pairing code: %v", err),
+			})
+			return
+		}
+
+		json.NewEncoder(w).Encode(map[string]interface{}{
+			"success":      true,
+			"pairing_code": code,
+			"message":      "Enter this code in WhatsApp on your phone: Settings > Linked Devices > Link a Device > Link with phone number",
+		})
+	})
+
 	// Handler for sending messages
 	http.HandleFunc("/api/send", func(w http.ResponseWriter, r *http.Request) {
 		// Only allow POST requests

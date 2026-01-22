@@ -355,6 +355,17 @@ if __name__ == "__main__":
         except Exception as e:
             return JSONResponse({"error": str(e), "authenticated": False, "connected": False, "ready": False}, status_code=500)
 
+    async def api_pair_phone(request: Request):
+        """Pair WhatsApp using phone number instead of QR code"""
+        try:
+            base_url = os.environ.get("WHATSAPP_API_BASE_URL", "http://localhost:8080/api")
+            body = await request.json()
+            async with httpx.AsyncClient() as client:
+                resp = await client.post(f"{base_url}/pair-phone", json=body, timeout=30.0)
+                return JSONResponse(resp.json())
+        except Exception as e:
+            return JSONResponse({"success": False, "message": str(e)}, status_code=500)
+
     starlette_app = Starlette(
         routes=[
             Route("/", endpoint=health_check),
@@ -362,6 +373,7 @@ if __name__ == "__main__":
             Route("/api/send", endpoint=api_send, methods=["POST"]),
             Route("/api/qr", endpoint=api_qr),
             Route("/api/status", endpoint=api_status),
+            Route("/api/pair-phone", endpoint=api_pair_phone, methods=["POST"]),
             Route("/sse", endpoint=handle_sse),
             Route("/messages", endpoint=handle_messages, methods=["POST"]),
         ]
