@@ -274,8 +274,35 @@ if __name__ == "__main__":
     from starlette.responses import JSONResponse
     from starlette.requests import Request
 
+    import httpx
+
     async def health_check(request):
-        return JSONResponse({"status": "ok", "service": "whatsapp-mcp"})
+        """Health check with WhatsApp connection status"""
+        try:
+            base_url = os.environ.get("WHATSAPP_API_BASE_URL", "http://localhost:8080/api")
+            async with httpx.AsyncClient() as client:
+                resp = await client.get(f"{base_url}/status", timeout=5.0)
+                wa_status = resp.json()
+                return JSONResponse({
+                    "status": "ok",
+                    "service": "whatsapp-mcp",
+                    "whatsapp": {
+                        "authenticated": wa_status.get("authenticated", False),
+                        "connected": wa_status.get("connected", False),
+                        "ready": wa_status.get("ready", False)
+                    }
+                })
+        except Exception:
+            return JSONResponse({
+                "status": "ok",
+                "service": "whatsapp-mcp",
+                "whatsapp": {
+                    "authenticated": False,
+                    "connected": False,
+                    "ready": False,
+                    "error": "Bridge not reachable"
+                }
+            })
 
     async def api_send(request: Request):
         """REST endpoint to send WhatsApp messages"""
@@ -293,8 +320,6 @@ if __name__ == "__main__":
             return JSONResponse({"success": success, "message": status_message})
         except Exception as e:
             return JSONResponse({"success": False, "message": str(e)}, status_code=500)
-
-    import httpx
 
     async def api_qr(request: Request):
         """Get QR code for WhatsApp authentication"""
