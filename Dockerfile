@@ -4,11 +4,13 @@ FROM golang:1.24-alpine AS go-builder
 # Install build dependencies for CGO (needed for SQLite)
 RUN apk add --no-cache gcc musl-dev sqlite-dev
 
-WORKDIR /app/whatsapp-bridge
-COPY whatsapp-bridge/ .
+WORKDIR /build
+COPY whatsapp-bridge/go.mod whatsapp-bridge/go.sum ./
 RUN go mod download
-RUN CGO_ENABLED=1 GOOS=linux go build -o whatsapp-bridge main.go
-RUN ls -la /app/whatsapp-bridge/
+
+COPY whatsapp-bridge/main.go ./
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o whatsapp-bridge main.go
+RUN chmod +x whatsapp-bridge && ls -la /build/
 
 # Final stage
 FROM python:3.12-slim
@@ -27,8 +29,9 @@ RUN pip install uv
 
 WORKDIR /app
 
-# Copy Go binary
-COPY --from=go-builder /app/whatsapp-bridge/whatsapp-bridge /app/whatsapp-bridge/whatsapp-bridge
+# Copy Go binary - verify it exists
+COPY --from=go-builder /build/whatsapp-bridge /app/whatsapp-bridge/whatsapp-bridge
+RUN ls -la /app/whatsapp-bridge/ && chmod +x /app/whatsapp-bridge/whatsapp-bridge
 
 # Copy Python MCP server
 COPY whatsapp-mcp-server/ /app/whatsapp-mcp-server/
@@ -52,7 +55,7 @@ ENV MCP_PORT=3000
 
 WORKDIR /app
 
-# Expose ports: 8080 for Go bridge, 3000 for MCP server
-EXPOSE 8080 3000
+# Expose ports: 8080 for Go bridge internal, 3000 for MCP server (Railway uses PORT)
+EXPOSE 3000 8080
 
 CMD ["/app/start.sh"]
