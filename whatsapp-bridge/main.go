@@ -1025,7 +1025,7 @@ func main() {
 
 	// Connect to WhatsApp
 	if client.Store.ID == nil {
-		// No ID stored, this is a new client, need to pair with phone
+		// No ID stored, this is a new client, need to pair
 		qrChan, _ := client.GetQRChannel(context.Background())
 		err = client.Connect()
 		if err != nil {
@@ -1033,40 +1033,46 @@ func main() {
 			return
 		}
 
-		// Print QR code for pairing with phone
-		for evt := range qrChan {
-			if evt.Event == "code" {
-				// Store QR code for API access
-				qrCodeMutex.Lock()
-				currentQRCode = evt.Code
-				qrCodeMutex.Unlock()
+		// Handle QR code events in a goroutine (non-blocking)
+		// This allows phone pairing API to work simultaneously
+		go func() {
+			for evt := range qrChan {
+				if evt.Event == "code" {
+					// Store QR code for API access
+					qrCodeMutex.Lock()
+					currentQRCode = evt.Code
+					qrCodeMutex.Unlock()
 
-				fmt.Println("\nScan this QR code with your WhatsApp app:")
-				fmt.Println("Or visit /api/qr to get the QR code string")
-				qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
-			} else if evt.Event == "success" {
-				// Clear QR code and set authenticated
-				qrCodeMutex.Lock()
-				currentQRCode = ""
-				qrCodeMutex.Unlock()
+					fmt.Println("\nScan this QR code with your WhatsApp app:")
+					fmt.Println("Or use /api/pair-phone for phone number pairing")
+					fmt.Println("Or visit /api/qr?format=png for QR image")
+					qrterminal.GenerateHalfBlock(evt.Code, qrterminal.L, os.Stdout)
+				} else if evt.Event == "success" {
+					// Clear QR code and set authenticated
+					qrCodeMutex.Lock()
+					currentQRCode = ""
+					qrCodeMutex.Unlock()
 
-				authMutex.Lock()
-				isAuthenticated = true
-				authMutex.Unlock()
+					authMutex.Lock()
+					isAuthenticated = true
+					authMutex.Unlock()
 
-				connected <- true
-				break
+					connected <- true
+					fmt.Println("\nSuccessfully connected and authenticated!")
+					return
+				}
 			}
-		}
+		}()
 
-		// Wait for connection
-		select {
-		case <-connected:
-			fmt.Println("\nSuccessfully connected and authenticated!")
-		case <-time.After(3 * time.Minute):
-			logger.Errorf("Timeout waiting for QR code scan")
-			return
-		}
+		// Wait for connection with timeout (but don't block forever - service keeps running)
+		go func() {
+			select {
+			case <-connected:
+				// Already handled in goroutine above
+			case <-time.After(10 * time.Minute):
+				logger.Warnf("Timeout waiting for pairing - service still running, try /api/pair-phone or /api/qr")
+			}
+		}()
 	} else {
 		// Already logged in, just connect
 		authMutex.Lock()
