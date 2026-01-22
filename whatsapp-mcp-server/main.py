@@ -248,6 +248,29 @@ def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:
 
 if __name__ == "__main__":
     import os
-    # Run with SSE transport for HTTP access
-    port = int(os.environ.get("MCP_PORT", "3000"))
-    mcp.run(transport='sse', host="0.0.0.0", port=port)
+    import uvicorn
+    from mcp.server.sse import SseServerTransport
+    from starlette.applications import Starlette
+    from starlette.routing import Route
+
+    # Create SSE transport
+    sse = SseServerTransport("/messages")
+
+    async def handle_sse(request):
+        async with sse.connect_sse(request.scope, request.receive, request._send) as streams:
+            await mcp._mcp_server.run(
+                streams[0], streams[1], mcp._mcp_server.create_initialization_options()
+            )
+
+    async def handle_messages(request):
+        await sse.handle_post_message(request.scope, request.receive, request._send)
+
+    starlette_app = Starlette(
+        routes=[
+            Route("/sse", endpoint=handle_sse),
+            Route("/messages", endpoint=handle_messages, methods=["POST"]),
+        ]
+    )
+
+    port = int(os.environ.get("PORT", os.environ.get("MCP_PORT", "3000")))
+    uvicorn.run(starlette_app, host="0.0.0.0", port=port)

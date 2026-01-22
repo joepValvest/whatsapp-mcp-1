@@ -7,7 +7,8 @@ RUN apk add --no-cache gcc musl-dev sqlite-dev
 WORKDIR /app/whatsapp-bridge
 COPY whatsapp-bridge/ .
 RUN go mod download
-RUN CGO_ENABLED=1 go build -o whatsapp-bridge main.go
+RUN CGO_ENABLED=1 GOOS=linux go build -o whatsapp-bridge main.go
+RUN ls -la /app/whatsapp-bridge/
 
 # Final stage
 FROM python:3.12-slim
