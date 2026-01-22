@@ -9,8 +9,9 @@ COPY whatsapp-bridge/go.mod whatsapp-bridge/go.sum ./
 RUN go mod download
 
 COPY whatsapp-bridge/main.go ./
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s" -o whatsapp-bridge main.go
-RUN chmod +x whatsapp-bridge && ls -la /build/
+# Build with static linking for glibc compatibility
+RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -ldflags="-w -s -linkmode external -extldflags '-static'" -o whatsapp-bridge main.go
+RUN chmod +x whatsapp-bridge && ls -la /build/ && file whatsapp-bridge
 
 # Final stage
 FROM python:3.12-slim
