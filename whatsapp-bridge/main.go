@@ -689,6 +689,126 @@ func extractDirectPathFromURL(url string) string {
 
 // Start a REST API server to expose the WhatsApp client functionality
 func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterface, port int) {
+	// Handler for authentication page - shows QR code or pairing options
+	http.HandleFunc("/auth", func(w http.ResponseWriter, r *http.Request) {
+		qrCodeMutex.RLock()
+		qr := currentQRCode
+		qrCodeMutex.RUnlock()
+
+		authMutex.RLock()
+		authenticated := isAuthenticated
+		authMutex.RUnlock()
+
+		w.Header().Set("Content-Type", "text/html")
+
+		html := `<!DOCTYPE html>
+<html>
+<head>
+    <title>WhatsApp Authentication</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; max-width: 500px; margin: 50px auto; padding: 20px; text-align: center; background: #f5f5f5; }
+        .card { background: white; border-radius: 12px; padding: 30px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        h1 { color: #128C7E; margin-bottom: 10px; }
+        .status { padding: 10px 20px; border-radius: 20px; display: inline-block; margin: 15px 0; }
+        .status.connected { background: #25D366; color: white; }
+        .status.waiting { background: #FFA500; color: white; }
+        .qr-container { margin: 20px 0; }
+        .qr-container img { max-width: 256px; border-radius: 8px; }
+        .instructions { color: #666; font-size: 14px; margin-top: 20px; text-align: left; }
+        .instructions ol { padding-left: 20px; }
+        .phone-form { margin-top: 20px; padding-top: 20px; border-top: 1px solid #eee; }
+        .phone-form input { padding: 10px; font-size: 16px; border: 1px solid #ddd; border-radius: 6px; width: 200px; }
+        .phone-form button { padding: 10px 20px; font-size: 16px; background: #128C7E; color: white; border: none; border-radius: 6px; cursor: pointer; margin-left: 10px; }
+        .phone-form button:hover { background: #0d7367; }
+        .result { margin-top: 15px; padding: 15px; border-radius: 8px; display: none; }
+        .result.success { background: #d4edda; color: #155724; }
+        .result.error { background: #f8d7da; color: #721c24; }
+        .pairing-code { font-size: 32px; font-weight: bold; letter-spacing: 4px; color: #128C7E; }
+    </style>
+</head>
+<body>
+    <div class="card">
+        <h1>🔗 WhatsApp Link</h1>`
+
+		if authenticated {
+			html += `
+        <div class="status connected">✓ Connected</div>
+        <p>WhatsApp is connected and ready to use.</p>
+        <p><a href="/api/status">View Status API</a></p>`
+		} else if qr != "" {
+			html += `
+        <div class="status waiting">Waiting for scan...</div>
+        <div class="qr-container">
+            <img src="/api/qr?format=png" alt="QR Code" />
+        </div>
+        <div class="instructions">
+            <strong>Option 1: Scan QR Code</strong>
+            <ol>
+                <li>Open WhatsApp on your phone</li>
+                <li>Go to Settings → Linked Devices</li>
+                <li>Tap "Link a Device"</li>
+                <li>Scan this QR code</li>
+            </ol>
+        </div>
+        <div class="phone-form">
+            <strong>Option 2: Link with Phone Number</strong>
+            <p style="font-size:13px;color:#666;">Enter phone with country code (no + or spaces)</p>
+            <input type="text" id="phone" placeholder="31612345678" />
+            <button onclick="pairPhone()">Get Code</button>
+            <div id="result" class="result"></div>
+        </div>
+        <script>
+            // Auto-refresh every 20 seconds to get new QR
+            setTimeout(() => location.reload(), 20000);
+
+            async function pairPhone() {
+                const phone = document.getElementById('phone').value;
+                const result = document.getElementById('result');
+                if (!phone) {
+                    result.className = 'result error';
+                    result.style.display = 'block';
+                    result.innerHTML = 'Please enter a phone number';
+                    return;
+                }
+                result.className = 'result';
+                result.style.display = 'block';
+                result.innerHTML = 'Requesting code...';
+                try {
+                    const resp = await fetch('/api/pair-phone', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({phone_number: phone})
+                    });
+                    const data = await resp.json();
+                    if (data.success) {
+                        result.className = 'result success';
+                        result.innerHTML = '<p>Enter this code in WhatsApp:</p><p class="pairing-code">' + data.pairing_code + '</p>';
+                    } else {
+                        result.className = 'result error';
+                        result.innerHTML = data.message || 'Failed to get code';
+                    }
+                } catch(e) {
+                    result.className = 'result error';
+                    result.innerHTML = 'Error: ' + e.message;
+                }
+            }
+        </script>`
+		} else {
+			html += `
+        <div class="status waiting">Starting...</div>
+        <p>Waiting for WhatsApp to initialize...</p>
+        <p>This page will refresh automatically.</p>
+        <script>setTimeout(() => location.reload(), 3000);</script>`
+		}
+
+		html += `
+    </div>
+</body>
+</html>`
+		w.Write([]byte(html))
+	})
+
 	// Handler for QR code - returns current QR code for authentication
 	http.HandleFunc("/api/qr", func(w http.ResponseWriter, r *http.Request) {
 		qrCodeMutex.RLock()
