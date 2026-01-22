@@ -22,6 +22,7 @@ import (
 	"github.com/joho/godotenv"
 	_ "github.com/mattn/go-sqlite3"
 	"github.com/mdp/qrterminal"
+	"github.com/skip2/go-qrcode"
 	"go.mau.fi/whatsmeow"
 	waProto "go.mau.fi/whatsmeow/binary/proto"
 	"go.mau.fi/whatsmeow/store/sqlstore"
@@ -690,8 +691,6 @@ func extractDirectPathFromURL(url string) string {
 func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterface, port int) {
 	// Handler for QR code - returns current QR code for authentication
 	http.HandleFunc("/api/qr", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-
 		qrCodeMutex.RLock()
 		qr := currentQRCode
 		qrCodeMutex.RUnlock()
@@ -700,10 +699,36 @@ func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterfac
 		authenticated := isAuthenticated
 		authMutex.RUnlock()
 
+		// Check if image format is requested
+		format := r.URL.Query().Get("format")
+		if format == "png" || format == "image" {
+			if authenticated {
+				http.Error(w, "Already authenticated", http.StatusBadRequest)
+				return
+			}
+			if qr == "" {
+				http.Error(w, "No QR code available", http.StatusServiceUnavailable)
+				return
+			}
+			// Generate QR code PNG
+			qrCode, err := qrcode.New(qr, qrcode.Medium)
+			if err != nil {
+				http.Error(w, "Failed to generate QR code", http.StatusInternalServerError)
+				return
+			}
+			w.Header().Set("Content-Type", "image/png")
+			qrCode.Write(256, w)
+			return
+		}
+
+		// Default JSON response
+		w.Header().Set("Content-Type", "application/json")
+
 		if authenticated {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"authenticated": true,
 				"qr_code":       "",
+				"qr_image_url":  "",
 				"message":       "Already authenticated",
 			})
 			return
@@ -713,6 +738,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterfac
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"authenticated": false,
 				"qr_code":       "",
+				"qr_image_url":  "",
 				"message":       "No QR code available. Service may be starting up.",
 			})
 			return
@@ -721,6 +747,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterfac
 		json.NewEncoder(w).Encode(map[string]interface{}{
 			"authenticated": false,
 			"qr_code":       qr,
+			"qr_image_url":  "/api/qr?format=png",
 			"message":       "Scan this QR code with WhatsApp",
 		})
 	})
