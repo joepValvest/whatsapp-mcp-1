@@ -1,5 +1,5 @@
 # Multi-stage build for WhatsApp MCP Server
-FROM golang:1.23-alpine AS go-builder
+FROM golang:1.24-alpine AS go-builder
 
 # Install build dependencies for CGO (needed for SQLite)
 RUN apk add --no-cache gcc musl-dev sqlite-dev
