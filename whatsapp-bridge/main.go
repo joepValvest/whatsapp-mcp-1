@@ -807,7 +807,7 @@ func startRESTServer(client *whatsmeow.Client, messageStore MessageStoreInterfac
 		}
 
 		// Request pairing code
-		code, err := client.PairPhone(req.PhoneNumber, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
+		code, err := client.PairPhone(context.Background(), req.PhoneNumber, true, whatsmeow.PairClientChrome, "Chrome (Linux)")
 		if err != nil {
 			json.NewEncoder(w).Encode(map[string]interface{}{
 				"success": false,
