@@ -321,12 +321,26 @@ if __name__ == "__main__":
         except Exception as e:
             return JSONResponse({"success": False, "message": str(e)}, status_code=500)
 
+    from starlette.responses import Response
+
     async def api_qr(request: Request):
         """Get QR code for WhatsApp authentication"""
         try:
             base_url = os.environ.get("WHATSAPP_API_BASE_URL", "http://localhost:8080/api")
+            # Pass query parameters (e.g., format=png)
+            query_string = str(request.query_params)
+            url = f"{base_url}/qr"
+            if query_string:
+                url = f"{url}?{query_string}"
+
             async with httpx.AsyncClient() as client:
-                resp = await client.get(f"{base_url}/qr", timeout=10.0)
+                resp = await client.get(url, timeout=10.0)
+
+                # Check if response is an image
+                content_type = resp.headers.get("content-type", "")
+                if "image" in content_type:
+                    return Response(content=resp.content, media_type=content_type)
+
                 return JSONResponse(resp.json())
         except Exception as e:
             return JSONResponse({"error": str(e), "authenticated": False, "qr_code": ""}, status_code=500)
