@@ -906,7 +906,11 @@ func main() {
 	fmt.Println("\n✓ Connected to WhatsApp! Type 'help' for commands.")
 
 	// Start REST API server
-	startRESTServer(client, messageStore, 8080)
+	bridgePort := 8080
+	if portEnv := os.Getenv("BRIDGE_PORT"); portEnv != "" {
+		fmt.Sscanf(portEnv, "%d", &bridgePort)
+	}
+	startRESTServer(client, messageStore, bridgePort)
 
 	// Create a channel to keep the main goroutine alive
 	exitChan := make(chan os.Signal, 1)

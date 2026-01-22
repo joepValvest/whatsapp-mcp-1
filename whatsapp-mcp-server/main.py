@@ -247,5 +247,7 @@ def download_media(message_id: str, chat_jid: str) -> Dict[str, Any]:
         }
 
 if __name__ == "__main__":
-    # Initialize and run the server
-    mcp.run(transport='stdio')
+    import os
+    # Run with SSE transport for HTTP access
+    port = int(os.environ.get("MCP_PORT", "3000"))
+    mcp.run(transport='sse', host="0.0.0.0", port=port)
